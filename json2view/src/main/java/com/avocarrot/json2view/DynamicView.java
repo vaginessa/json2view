@@ -4,6 +4,7 @@ import android.content.Context;
 import android.text.TextUtils;
 import android.view.View;
 import android.view.ViewGroup;
+import android.webkit.WebView;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -22,23 +23,17 @@ public class DynamicView {
 
     static int mCurrentId = 13;
     static int INTERNAL_TAG_ID = 0x7f020000;
+    static HashMap<String, TriggerInterface> triggerList = new HashMap<>();
+    static HashMap<String, String> wvActionStorage = new HashMap<>();
+    static WebView webView;
 
-    /**
-     * @param jsonObject : json object
-     * @param holderClass : class that will be created as an holder and attached as a tag in the View
-     * @return the view that created
-     */
-    public static View createView (Context context, JSONObject jsonObject, Class holderClass) {
-        return createView(context, jsonObject, null, holderClass);
-    }
 
     /**
      * @param jsonObject : json object
      * @param parent : parent viewGroup
-     * @param holderClass : class that will be created as an holder and attached as a tag in the View, If contains HashMap ids will replaced with idsMap
      * @return the view that created
      */
-    public static View createView (Context context, JSONObject jsonObject, ViewGroup parent, Class holderClass) {
+    public static View createView (Context context, JSONObject jsonObject, ViewGroup parent) {
 
         if (jsonObject==null)
             return null;
@@ -56,23 +51,6 @@ public class DynamicView {
         /* clear tag from properties */
         container.setTag(INTERNAL_TAG_ID, null);
 
-        if (holderClass!= null) {
-
-            try {
-                Object holder = holderClass.getConstructor().newInstance();
-                DynamicHelper.parseDynamicView(holder, container, ids);
-                container.setTag(holder);
-            } catch (InstantiationException e) {
-                e.printStackTrace();
-            } catch (IllegalAccessException e) {
-                e.printStackTrace();
-            } catch (NoSuchMethodException e) {
-                e.printStackTrace();
-            } catch (InvocationTargetException e) {
-                e.printStackTrace();
-            }
-
-        }
 
         return container;
 
@@ -80,19 +58,10 @@ public class DynamicView {
 
     /**
      * @param jsonObject : json object
-     * @param parent : parent viewGroup
-     * @return the view that created
-     */
-    public static View createView (Context context, JSONObject jsonObject, ViewGroup parent) {
-        return createView(context, jsonObject, parent, null);
-    }
-
-    /**
-     * @param jsonObject : json object
      * @return the view that created
      */
     public static View createView (Context context, JSONObject jsonObject) {
-        return createView(context, jsonObject, null, null);
+        return createView(context, jsonObject, null);
     }
 
     /**
@@ -186,7 +155,7 @@ public class DynamicView {
                     /* clear tag from properties */
                     v.setTag(INTERNAL_TAG_ID, null);
                 }
-            }
+            } 
 
         } catch (JSONException e) {
             e.printStackTrace();
@@ -194,6 +163,16 @@ public class DynamicView {
 
         return view;
 
+    }
+    public static void triggerEvent(String event, JSONObject args){
+        triggerList.get(event).trigger(args);
+    }
+    public static void setWebView(WebView wv){
+        webView = wv;
+    }
+
+    public void storeJsAction(String key, String command){
+        wvActionStorage.put(key,command);
     }
 
 }

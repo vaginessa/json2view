@@ -113,7 +113,10 @@ public class DynamicProperty {
         ORIENTATION,
 
         TAG,
-        FUNCTION
+        FUNCTION,
+        /* button */
+        WVACTION,
+        TRIGGER
     }
 
     public NAME name;

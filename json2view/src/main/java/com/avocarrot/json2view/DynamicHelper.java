@@ -168,10 +168,19 @@ public class DynamicHelper {
                     applyFunction(view, dynProp);
                 }
                 break;
+                case WVACTION: {
+                    applyWebViewAction(view, dynProp);
+                }
+                break;
+                case TRIGGER: {
+                    setTrigger(view, dynProp);
+                }
+
             }
         }
         return id;
     }
+
 
     /**
      * apply dynamic properties for layout in view
@@ -788,70 +797,110 @@ public class DynamicHelper {
      * apply generic function in View
      */
     public static void applyFunction(View view, DynamicProperty property) {
-
         if (property.type == DynamicProperty.TYPE.JSON) {
-            try {
-                JSONObject json = property.getValueJSON();
+            JSONObject json = property.getValueJSON();
+            applyFunction(view, json);
+        }
+    }
 
-                String functionName = json.getString("function");
-                JSONArray args = json.getJSONArray("args");
+    private static void applyFunction(View view , JSONObject json){
+        try {
 
-                Class[] argsClass;
-                Object[] argsValue;
-                if (args==null) {
+            String functionName = json.getString("function");
+            JSONArray args = json.getJSONArray("args");
+
+            Class[] argsClass;
+            Object[] argsValue;
+            if (args==null) {
+                argsClass = new Class[0];
+                argsValue = new Object[0];
+            } else {
+                try {
+                    List<Class> classList = new ArrayList<>();
+                    List<Object> valueList= new ArrayList<>();
+
+                    int i=0;
+                    int count = args.length();
+                    for (; i<count ; i++) {
+                        JSONObject argJsonObj = args.getJSONObject(i);
+                        boolean isPrimitive = argJsonObj.has("primitive");
+                        String className = argJsonObj.getString( isPrimitive ? "primitive" : "class");
+                        String classFullName = className;
+                        if (!classFullName.contains("."))
+                            classFullName = "java.lang." + className;
+                        Class clazz = Class.forName(classFullName);
+                        if (isPrimitive) {
+                            Class primitiveType = (Class)clazz.getField("TYPE").get(null);
+                            classList.add( primitiveType );
+                        } else {
+                            classList.add( clazz );
+                        }
+
+                        try {
+                            valueList.add( getFromJSON(argJsonObj, "value", clazz) );
+                        } catch (Exception e) {
+                            e.printStackTrace();
+                        }
+                    }
+                    argsClass = classList.toArray(new Class[classList.size()]);
+                    argsValue = valueList.toArray(new Object[valueList.size()]);
+                } catch (Exception e) {
                     argsClass = new Class[0];
                     argsValue = new Object[0];
-                } else {
-                    try {
-                        List<Class> classList = new ArrayList<>();
-                        List<Object> valueList= new ArrayList<>();
-
-                        int i=0;
-                        int count = args.length();
-                        for (; i<count ; i++) {
-                            JSONObject argJsonObj = args.getJSONObject(i);
-                            boolean isPrimitive = argJsonObj.has("primitive");
-                            String className = argJsonObj.getString( isPrimitive ? "primitive" : "class");
-                            String classFullName = className;
-                            if (!classFullName.contains("."))
-                                classFullName = "java.lang." + className;
-                            Class clazz = Class.forName(classFullName);
-                            if (isPrimitive) {
-                                Class primitiveType = (Class)clazz.getField("TYPE").get(null);
-                                classList.add( primitiveType );
-                            } else {
-                                classList.add( clazz );
-                            }
-
-                            try {
-                                valueList.add( getFromJSON(argJsonObj, "value", clazz) );
-                            } catch (Exception e) {
-                                e.printStackTrace();
-                            }
-                        }
-                        argsClass = classList.toArray(new Class[classList.size()]);
-                        argsValue = valueList.toArray(new Object[valueList.size()]);
-                    } catch (Exception e) {
-                        argsClass = new Class[0];
-                        argsValue = new Object[0];
-                    }
                 }
+            }
 
-                try {
-                    view.getClass().getMethod(functionName, argsClass).invoke(view, argsValue);
-                } catch (SecurityException e) {
-                } catch (NoSuchMethodException e) {
-                    e.printStackTrace();
-                }
-
-            } catch (Exception e) {
+            try {
+                view.getClass().getMethod(functionName, argsClass).invoke(view, argsValue);
+            } catch (SecurityException e) {
+            } catch (NoSuchMethodException e) {
                 e.printStackTrace();
             }
+
+        } catch (Exception e) {
+            e.printStackTrace();
         }
 
     }
 
+    /**
+     * Action to apply to webView when user clicks on view
+     */
+    private static void applyWebViewAction(View view, final DynamicProperty property) {
 
+        view.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                try {
+                    String action = null;
+                    JSONObject json = property.getValueJSON();
+                    String type = json.getString("action_type");
+                    if(type.equals("string")){
+                        action = json.getString("value");
+                    }
+                    else if(type.equals("store")){
+                        action = DynamicView.wvActionStorage.get(json.get("value"));
+                    }
+                    if(action != null){
+                        DynamicView.webView.loadUrl(action);
+                    }
+                } catch (JSONException e) {
+                    e.printStackTrace();
+                }
+
+            }
+        });
+    }
+
+    private static void setTrigger(final View view, DynamicProperty property) {
+        TriggerInterface ti = new TriggerInterface() {
+            @Override
+            public void trigger(JSONObject args) {
+                applyFunction(view, args);
+            }
+        };
+        DynamicView.triggerList.put(property.getValueString(), ti);
+    }
 
     /**
      * return the id (from the R.java autogenerated class) of the drawable that pass its name as argument
@@ -911,40 +960,6 @@ public class DynamicHelper {
         return Resources.getSystem().getDisplayMetrics().widthPixels;
     }
 
-    /**
-     * get ViewHolder class and make reference for evert @link(DynamicViewId) to the actual view
-     * if target contains HashMap<String, Integer> will replaced with the idsMap
-     */
-    public static void parseDynamicView(Object target, View container, HashMap<String, Integer> idsMap) {
-
-        for (Field field : target.getClass().getDeclaredFields()) {
-            if (field.isAnnotationPresent(DynamicViewId.class)) {
-                /* if variable is annotated with @DynamicViewId */
-                final DynamicViewId dynamicViewIdAnnotation = field.getAnnotation(DynamicViewId.class);
-                /* get the Id of the view. if it is not set in annotation user the variable name */
-                String id = dynamicViewIdAnnotation.id();
-                if (id.equalsIgnoreCase(""))
-                    id = field.getName();
-                if (idsMap.containsKey(id)) {
-                    try {
-                        /* get the view Id from the Hashmap and make the connection to the real View */
-                        field.set(target, container.findViewById(idsMap.get(id)));
-                    } catch (IllegalArgumentException e) {
-                    } catch (IllegalAccessException e) {
-                        e.printStackTrace();
-                    }
-                }
-            } else if ((field.getName().equalsIgnoreCase("ids")) && (field.getType() == idsMap.getClass())) {
-                try {
-                    field.set(target, idsMap);
-                } catch (IllegalArgumentException e) {
-                } catch (IllegalAccessException e) {
-                    e.printStackTrace();
-                }
-            }
-        }
-
-    }
 
     private static Object getFromJSON(JSONObject json, String name, Class clazz) throws JSONException {
         if ((clazz == Integer.class)||(clazz == Integer.TYPE)) {
